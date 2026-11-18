@@ -1,0 +1,27 @@
+{
+  "mcpServers": {
+    "hybrid-rag": {
+      "command": "uv",
+      "args": ["run", "app/mcp_servers/rag_server.py"],
+      "transport": "stdio",
+      "timeout_ms": 150
+    },
+    "state-store": {
+      "url": "http://localhost:8081/mcp",
+      "transport": "streamable-http",
+      "pool_size": 200
+    },
+    "graphify-vault": {
+      "command": "uv",
+      "args": ["run", "app/mcp_servers/graphify_server.py"],
+      "transport": "stdio"
+    }
+  },
+  "plugins": [
+    {"name": "pii_redactor", "stage": "PRE_EXECUTION", "priority": 10, "fail_closed": true},
+    {"name": "injection_shield", "stage": "PRE_EXECUTION", "priority": 20, "fail_closed": true},
+    {"name": "circuit_breaker", "stage": "TOOL_DISPATCH", "priority": 10, "max_identical_calls": 2},
+    {"name": "ragas_auditor", "stage": "POST_EXECUTION", "priority": 10, "min_faithfulness": 0.92},
+    {"name": "otel_exporter", "stage": "ALL_SPANS", "endpoint": "http://localhost:4317"}
+  ]
+}

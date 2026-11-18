@@ -1,0 +1,90 @@
+digraph UnreliableAssistant {
+  graph [rankdir=TB, bgcolor="white", pad="0.25", nodesep="0.32", ranksep="0.48", dpi="300", fontname="Helvetica"];
+  node [shape=box, style="rounded,filled", fontname="Helvetica", fontsize="10", margin="0.12,0.08"];
+  edge [fontname="Helvetica", fontsize="9", color="#42526E", arrowsize="0.7"];
+
+  subgraph cluster_ingress {
+    label="Ingress and Security";
+    style="rounded,filled"; fillcolor="#EFF6FF"; color="#93C5FD";
+    ingress [label="API Gateway / Envoy\nFastAPI + Uvicorn", fillcolor="#DBEAFE"];
+    auth [label="Authentication +\nTenant Context", fillcolor="#FFFFFF"];
+    pii [label="PII Redactor\n≤15 ms p95", fillcolor="#FFFFFF"];
+    injection [label="Injection Shield\nfail closed", fillcolor="#FFFFFF"];
+    cache [shape=diamond, label="Redis Semantic Cache\nTenant + User Scoped", fillcolor="#FEF3C7"];
+  }
+
+  subgraph cluster_control {
+    label="Triage and Agent Control Plane";
+    style="rounded,filled"; fillcolor="#F5F3FF"; color="#C4B5FD";
+    triage [label="Distilled Triage Agent\ntemperature 0.0 / ≤25 ms", fillcolor="#EDE9FE"];
+    direct [label="Direct Answer", fillcolor="#FFFFFF"];
+    retrieval [label="Retrieval Subagent\nRead only", fillcolor="#FFFFFF"];
+    execution [label="Execution Subagent\nTIER 1–3", fillcolor="#FFFFFF"];
+    audit [label="Audit / Reject", fillcolor="#FFFFFF"];
+  }
+
+  subgraph cluster_rag {
+    label="MCP 3-Stage Hybrid RAG";
+    style="rounded,filled"; fillcolor="#ECFDF5"; color="#86EFAC";
+    ragmcp [label="mcp-hybrid-rag", fillcolor="#D1FAE5"];
+    bm25 [label="Stage 1\nBM25 k1=1.25 b=0.75\n≤12 ms", fillcolor="#FFFFFF"];
+    dense [label="Stage 2\nBGE + FAISS HNSW\n≤25 ms", fillcolor="#FFFFFF"];
+    rrf [label="RRF Fusion\nk=60 / ≤3 ms", fillcolor="#FFFFFF"];
+    rerank [shape=diamond, label="ONNX Cross-Encoder\n≤45 ms / cutoff 0.42", fillcolor="#FEF3C7"];
+    graphify [label="mcp-graphify-vault\nDepth 1–2 subgraph", fillcolor="#FFFFFF"];
+  }
+
+  subgraph cluster_execution {
+    label="Tool and Memory Control";
+    style="rounded,filled"; fillcolor="#FFF7ED"; color="#FDBA74";
+    react [label="Bounded ReAct State Machine\nINIT → TRIAGE → REASONING\n→ TOOL_CALL → OBSERVATION → VERIFY\n5 steps / 120 ms step / 450 ms loop", fillcolor="#FFEDD5"];
+    harness [label="ToolExecutionHarness\nPydantic + Repair + RBAC + UUIDv4", fillcolor="#FFFFFF"];
+    breaker [shape=diamond, label="Circuit Breaker\nHALTED after repeated canonical call", fillcolor="#FEE2E2"];
+    state [label="mcp-state-store\nPostgreSQL / pgvector / Audit", fillcolor="#FFFFFF"];
+    hitl [shape=diamond, label="Tier 3 HITL\nPENDING_APPROVAL", fillcolor="#FEF3C7"];
+  }
+
+  subgraph cluster_egress {
+    label="Verification and Observability";
+    style="rounded,filled"; fillcolor="#FAFAFA"; color="#D4D4D8";
+    verify [label="Verification Subagent\nClaim-to-chunk NLI / RAGAS", fillcolor="#FFFFFF"];
+    abstain [label="Deterministic Abstention\nif rerank score <0.42", fillcolor="#FEE2E2"];
+    output [label="Streaming Response + Citations", fillcolor="#DCFCE7"];
+    otel [label="W3C TraceContext → OTel Collector\nPrometheus / Tempo / Grafana", fillcolor="#FFFFFF"];
+  }
+
+  ingress -> auth -> pii -> injection -> cache;
+  cache -> triage [label="cache miss"];
+  cache -> output [label="verified cache hit"];
+
+  triage -> direct;
+  triage -> retrieval [label="HYBRID_RAG"];
+  triage -> execution [label="TRANSACTION_EXEC"];
+  triage -> audit [label="REJECT_OOS"];
+
+  direct -> verify;
+  retrieval -> ragmcp;
+  ragmcp -> bm25 -> dense -> rrf -> rerank;
+  ragmcp -> graphify [style=dashed];
+  rerank -> verify [label="score ≥0.42"];
+  rerank -> abstain [label="score <0.42"];
+
+  execution -> react;
+  react -> harness;
+  harness -> breaker;
+  breaker -> state [label="call allowed"];
+  breaker -> audit [label="breaker open"];
+  state -> hitl [label="Tier 3 mutation"];
+  hitl -> state [label="approved"];
+  hitl -> audit [label="rejected"];
+
+  state -> verify [style=dashed, label="verified facts only"];
+  verify -> output;
+  verify -> abstain [label="ungrounded / RAGAS failure"];
+  abstain -> audit;
+  audit -> output;
+  output -> otel;
+  pii -> otel [style=dashed];
+  triage -> otel [style=dashed];
+  react -> otel [style=dashed];
+}
